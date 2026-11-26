@@ -10,16 +10,17 @@
 </style>
 </head>
 <body><main>
-<header><div class="eyebrow">VEHICLE IDENTIFICATION / V1</div><h1>Plate to VIN</h1><p>Enter a license plate and registration state.</p></header>
+<header><div class="eyebrow">VEHICLE IDENTIFICATION / V2</div><h1>Plate to VIN</h1><p>Enter a license plate and registration state.</p></header>
 <section class="panel" aria-label="Vehicle lookup">
 <form id="lookupForm" autocomplete="off">
 <div class="fields"><div><label for="plate">License plate</label><input id="plate" name="plate" placeholder="ABC123" maxlength="15" autocapitalize="characters" spellcheck="false" required></div><div><label for="state">State</label><select id="state" name="state" required></select></div></div>
 <button class="primary" type="submit" id="submit">Find VIN</button>
 <div class="tools"><button type="button" class="secondary" id="demo">Load demo</button><button type="button" class="secondary" id="clear">Clear</button></div>
+<button type="button" class="secondary" id="test" style="width:100%;margin-top:10px">Test live connection</button>
 </form>
 <div class="status" id="status" role="status" aria-live="polite">Demo mode — live lookup is not connected.</div>
-<section class="result" id="result" hidden aria-label="Lookup result"><small>Example VIN · not a real plate match</small><output class="vin" id="vin"></output><button class="secondary" type="button" id="copy">Copy VIN</button></section>
-<p class="notice">This version uses a fixed sample only. No plate information is sent to an API or stored by the application.</p>
+<section class="result" id="result" hidden aria-label="Lookup result"><small id="resultLabel">Example VIN · not a real plate match</small><output class="vin" id="vin"></output><button class="secondary" type="button" id="copy">Copy VIN</button></section>
+<p class="notice">Find VIN remains a demo. Test live connection sends the entered plate and state to Carvana only after confirmation. Use only vehicles you are authorized to look up. This page does not store lookup inputs or results.</p>
 </section><footer>Internal tool prototype · No affiliation with Carvana</footer>
 </main>
 <script>
@@ -27,10 +28,11 @@
 const states = 'AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY'.split(' ').sort();
 const $ = id => document.getElementById(id);
 const plate = $('plate'), state = $('state'), status = $('status'), result = $('result'), vin = $('vin');
+let testing = false;
 const demo = Object.freeze({plate:'DEMO123', state:'OR', vin:'1M8GDM9AXKP042788'});
 for (const code of states) { const option = document.createElement('option'); option.value = option.textContent = code; state.append(option); }
 state.value = 'OR';
-function resetResult(message='Demo mode — live lookup is not connected.') { result.hidden=true; vin.textContent=''; status.textContent=message; $('copy').textContent='Copy VIN'; }
+function resetResult(message='Demo mode — live lookup is not connected.') { result.hidden=true; vin.textContent=''; status.textContent=message; $('copy').textContent='Copy VIN'; $('resultLabel').textContent='Example VIN · not a real plate match'; }
 plate.addEventListener('input',()=>{plate.value=plate.value.toUpperCase();resetResult();});
 state.addEventListener('change',()=>resetResult());
 $('demo').addEventListener('click',()=>{plate.value=demo.plate;state.value=demo.state;resetResult('Demo loaded. Select Find VIN.');});
@@ -44,7 +46,39 @@ $('lookupForm').addEventListener('submit',event=>{
 });
 $('copy').addEventListener('click',async()=>{
  if(!vin.textContent)return;
- try {await navigator.clipboard.writeText(vin.textContent);$('copy').textContent='Copied!';status.textContent='Example VIN copied.';}
+ try {await navigator.clipboard.writeText(vin.textContent);$('copy').textContent='Copied!';status.textContent='VIN copied.';}
  catch {const range=document.createRange();range.selectNodeContents(vin);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);status.textContent='VIN selected. Use your device’s Copy command.';}
+});
+
+$('test').addEventListener('click', async () => {
+ if(testing) return;
+ resetResult();
+ const value=plate.value.trim().toUpperCase(), region=state.value;
+ if(!/^[A-Z0-9][A-Z0-9 -]{0,14}$/.test(value) || !states.includes(region) || value===demo.plate){
+  status.textContent='Enter an authorized real plate and state to test the connection.';return;
+ }
+ if(!window.confirm('Send this plate and state to Carvana for one test lookup? Continue only if you are authorized to perform this lookup.')){status.textContent='Test canceled.';return;}
+ testing=true;
+ const controls=[plate,state,$('submit'),$('demo'),$('clear'),$('test')];
+ controls.forEach(c=>c.disabled=true);
+ status.textContent='Testing live connection…';
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),20000);
+ try {
+  const response=await fetch('https://apik.carvana.io/stc/bff/graphql/', {
+   method:'POST',mode:'cors',credentials:'omit',signal:controller.signal,
+   headers:{'Content-Type':'application/json','Accept':'application/json'},
+   body:JSON.stringify({operationName:'getVehicleDescriptionsByPlateState',query:'query getVehicleDescriptionsByPlateState($input: GetDescriptionsByPlateStateInput!) { vehicleDescriptionsByPlateState(input: $input) { vin } }',variables:{input:{plate:value,state:region,source:'stc'}}})
+  });
+  if(!response.ok){status.textContent=`HTTP ${response.status} — request not accepted. No automatic retries.`;return;}
+  let data;
+  try {data=await response.json();} catch {status.textContent=`HTTP ${response.status} — response was not valid JSON.`;return;}
+  if(data?.errors?.length){status.textContent=`HTTP ${response.status} — GraphQL returned an error. See Network for diagnostics.`;return;}
+  const found=data?.data?.vehicleDescriptionsByPlateState?.vin;
+  if(typeof found!=='string'||!/^[A-HJ-NPR-Z0-9]{17}$/.test(found)){status.textContent=`HTTP ${response.status} — no valid VIN returned.`;return;}
+  $('resultLabel').textContent='VIN returned by live test';vin.textContent=found;result.hidden=false;status.textContent=`HTTP ${response.status} — live test successful.`;
+ } catch(error) {
+  status.textContent=error.name==='AbortError'?'Connection timed out.':'Browser could not read the API response. Possible CORS, network or access restriction. Check F12 → Network and Console.';
+ } finally {clearTimeout(timeout);testing=false;controls.forEach(c=>c.disabled=false);}
 });
 </script></body></html>
