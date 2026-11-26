@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101720">
+<title>Plate to VIN</title>
+<style>
+:root{color-scheme:dark;--bg:#101720;--panel:#19232f;--border:#344253;--text:#f1f5f9;--muted:#aebdcd;--accent:#83c5ff}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,sans-serif}main{max-width:520px;margin:auto;padding:48px 18px 32px}header{margin-bottom:26px}.eyebrow{font-size:12px;letter-spacing:.16em;color:var(--accent);font-weight:700}h1{font-size:38px;line-height:1.1;letter-spacing:-.05em;margin:9px 0}p{color:var(--muted);margin:8px 0}.panel{background:var(--panel);border:1px solid var(--border);border-radius:20px;padding:22px}.fields{display:grid;grid-template-columns:minmax(0,1fr) 100px;gap:12px}label{display:block;font-weight:650;font-size:14px;margin-bottom:7px}input,select,button{font:inherit;border-radius:10px;min-height:50px}input,select{width:100%;border:1px solid var(--border);background:var(--bg);color:var(--text);padding:10px 12px;font-size:16px}input{text-transform:uppercase;font-weight:700;letter-spacing:.08em}button{cursor:pointer;border:1px solid transparent;font-weight:700;padding:10px 16px}button.primary{background:var(--accent);color:#101720;width:100%;margin-top:18px}button.secondary{background:transparent;color:var(--text);border-color:var(--border)}button:disabled{opacity:.5;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:3px}.tools{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}.tools button{flex:1;font-size:14px}.status{margin-top:16px;color:var(--muted);font-size:14px}.result{margin-top:22px;border-top:1px solid var(--border);padding-top:18px}.result small{color:var(--muted)}.vin{display:block;font:700 clamp(18px,5.2vw,28px)/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere;margin:8px 0 16px;letter-spacing:.025em}.result button{width:100%}.notice{font-size:13px;margin-top:18px}footer{font-size:12px;color:var(--muted);margin-top:24px}[hidden]{display:none!important}@media(max-width:380px){main{padding:30px 12px}.panel{padding:16px}.fields{grid-template-columns:minmax(0,1fr) 84px}}
+</style>
+</head>
+<body><main>
+<header><div class="eyebrow">VEHICLE IDENTIFICATION / V1</div><h1>Plate to VIN</h1><p>Enter a license plate and registration state.</p></header>
+<section class="panel" aria-label="Vehicle lookup">
+<form id="lookupForm" autocomplete="off">
+<div class="fields"><div><label for="plate">License plate</label><input id="plate" name="plate" placeholder="ABC123" maxlength="15" autocapitalize="characters" spellcheck="false" required></div><div><label for="state">State</label><select id="state" name="state" required></select></div></div>
+<button class="primary" type="submit" id="submit">Find VIN</button>
+<div class="tools"><button type="button" class="secondary" id="demo">Load demo</button><button type="button" class="secondary" id="clear">Clear</button></div>
+</form>
+<div class="status" id="status" role="status" aria-live="polite">Demo mode — live lookup is not connected.</div>
+<section class="result" id="result" hidden aria-label="Lookup result"><small>Example VIN · not a real plate match</small><output class="vin" id="vin"></output><button class="secondary" type="button" id="copy">Copy VIN</button></section>
+<p class="notice">This version uses a fixed sample only. No plate information is sent to an API or stored by the application.</p>
+</section><footer>Internal tool prototype · No affiliation with Carvana</footer>
+</main>
+<script>
+'use strict';
+const states = 'AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY'.split(' ').sort();
+const $ = id => document.getElementById(id);
+const plate = $('plate'), state = $('state'), status = $('status'), result = $('result'), vin = $('vin');
+const demo = Object.freeze({plate:'DEMO123', state:'OR', vin:'1M8GDM9AXKP042788'});
+for (const code of states) { const option = document.createElement('option'); option.value = option.textContent = code; state.append(option); }
+state.value = 'OR';
+function resetResult(message='Demo mode — live lookup is not connected.') { result.hidden=true; vin.textContent=''; status.textContent=message; $('copy').textContent='Copy VIN'; }
+plate.addEventListener('input',()=>{plate.value=plate.value.toUpperCase();resetResult();});
+state.addEventListener('change',()=>resetResult());
+$('demo').addEventListener('click',()=>{plate.value=demo.plate;state.value=demo.state;resetResult('Demo loaded. Select Find VIN.');});
+$('clear').addEventListener('click',()=>{plate.value='';state.value='OR';resetResult();plate.focus();});
+$('lookupForm').addEventListener('submit',event=>{
+ event.preventDefault(); resetResult();
+ const value=plate.value.trim().toUpperCase();
+ if(!/^[A-Z0-9][A-Z0-9 -]{0,14}$/.test(value)){status.textContent='Enter a valid plate using letters, numbers, spaces or hyphens.';return;}
+ if(value!==demo.plate || state.value!==demo.state){status.textContent='Live lookup is not connected. Use Load demo to try the interface.';return;}
+ vin.textContent=demo.vin;result.hidden=false;status.textContent='Demo lookup successful.';
+});
+$('copy').addEventListener('click',async()=>{
+ if(!vin.textContent)return;
+ try {await navigator.clipboard.writeText(vin.textContent);$('copy').textContent='Copied!';status.textContent='Example VIN copied.';}
+ catch {const range=document.createRange();range.selectNodeContents(vin);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);status.textContent='VIN selected. Use your device’s Copy command.';}
+});
+</script></body></html>
